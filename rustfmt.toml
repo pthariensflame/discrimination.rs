@@ -1,0 +1,10 @@
+take_source_hints = false
+wrap_comments = true
+reorder_imports = true
+reorder_imported_names = true
+chain_base_indent = "Visual"
+chain_indent = "Visual"
+struct_lit_style = "Visual"
+where_indent = "Visual"
+use_try_shorthand = true
+condense_wildcard_suffices = true

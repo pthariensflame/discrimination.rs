@@ -1,6 +1,6 @@
 [package]
 name = "discrimination"
-version = "0.0.1"
+version = "0.0.0"
 authors = ["Alexander Ronald Altman <alexanderaltman@me.com>"]
 description = "Generic worst-case-linear-time sorting and partitioning algorithms based on discriminators"
 readme = "README.md"

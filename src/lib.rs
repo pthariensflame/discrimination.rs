@@ -6,6 +6,10 @@
 //! [2]:http://www.diku.dk/hjemmesider/ansatte/henglein/papers/henglein2011c.pdf
 //! [3]:https://github.com/ekmett/discrimination
 
+#![cfg_attr(feature = "no_std", no_std)]
+#[cfg(feature = "no_std")]
+use core as std;
+
 #[cfg(test)]
 mod tests {
     #[test]

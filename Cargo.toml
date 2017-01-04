@@ -1,6 +1,6 @@
 [package]
 name = "discrimination"
-version = "0.0.0"
+version = "0.0.1"
 authors = ["Alexander Ronald Altman <alexanderaltman@me.com>"]
 description = "Generic worst-case-linear-time sorting and partitioning algorithms based on discriminators"
 readme = "README.md"
@@ -15,7 +15,4 @@ name = "discrimination"
 path = "src/lib.rs"
 
 [dependencies]
-
-[features]
-default = ["no_std"]
-no_std = []
+either = "1.0.2"

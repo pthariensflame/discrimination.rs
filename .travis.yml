@@ -1,6 +1,16 @@
 language: rust
+
+sudo: false
+
+env:
+  global:
+    - CRATE_NAME=discrimination
+
 rust:
   - stable
   - beta
   - nightly
-sudo: false
+
+os:
+  - linux
+  - osx

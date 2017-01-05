@@ -5,8 +5,6 @@ environment:
     PROJECT_NAME: discrimination.rs
   matrix:
     # Stable channel
-    - TARGET: i586-pc-windows-msvc
-      CHANNEL: stable
     - TARGET: i686-pc-windows-gnu
       CHANNEL: stable
     - TARGET: i686-pc-windows-msvc
@@ -16,8 +14,6 @@ environment:
     - TARGET: x86_64-pc-windows-msvc
       CHANNEL: stable
     # Beta channel
-    - TARGET: i586-pc-windows-msvc
-      CHANNEL: beta
     - TARGET: i686-pc-windows-gnu
       CHANNEL: beta
     - TARGET: i686-pc-windows-msvc
@@ -27,8 +23,6 @@ environment:
     - TARGET: x86_64-pc-windows-msvc
       CHANNEL: beta
     # Nightly channel
-    - TARGET: i586-pc-windows-msvc
-      CHANNEL: beta
     - TARGET: i686-pc-windows-gnu
       CHANNEL: nightly
     - TARGET: i686-pc-windows-msvc

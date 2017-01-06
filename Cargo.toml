@@ -15,4 +15,5 @@ name = "discrimination"
 path = "src/lib.rs"
 
 [dependencies]
-either = "1.0.2"
+either = "^1.0.2"
+cfg-if = "^0.1.0"

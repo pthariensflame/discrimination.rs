@@ -8,9 +8,16 @@
 
 pub extern crate either;
 
-pub mod discrimination;
+pub mod discriminator;
 
 pub mod split_either;
+
+pub mod prelude {
+    #[doc(inline)]
+    pub use discriminator::Discriminator;
+    #[doc(inline)]
+    pub use either::Either;
+}
 
 #[cfg(test)]
 mod tests {

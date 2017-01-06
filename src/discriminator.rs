@@ -15,6 +15,19 @@ pub trait Discriminator<'a, K: 'a> {
         where I: IntoIterator,
               I::Item: Into<(K, V)>,
               I::IntoIter: DoubleEndedIterator + 'a;
+
+    fn invert(self) -> Invert<Self>
+        where Self: Sized
+    {
+        Invert::new(self)
+    }
+
+    fn map<J: 'a, F>(self, f: F) -> Map<F, Self>
+        where Self: Sized,
+              F: Fn(J) -> K
+    {
+        Map::new(f, self)
+    }
 }
 
 pub struct DiscriminateSorted<'a, K: 'a, V: 'a>(DiscriminateSortedImpl<'a, K, V>);
@@ -330,6 +343,78 @@ impl<'a> Discriminator<'a, usize> for Natural {
 
         DiscriminateSorted(DiscriminateSortedImpl::Natural(self.bdisc(Vec::push, pairs)
                                                                .into_iter()))
+    }
+}
+
+#[derive(Debug,Copy,Clone,Default)]
+#[cfg(any(target_pointer_width = "8",
+          target_pointer_width = "16",
+          target_pointer_width = "32",
+          target_pointer_width = "64",
+          target_pointer_width = "128"))]
+pub struct Byte;
+
+#[cfg(any(target_pointer_width = "8",
+          target_pointer_width = "16",
+          target_pointer_width = "32",
+          target_pointer_width = "64",
+          target_pointer_width = "128"))]
+impl<'a> Discriminator<'a, u8> for Byte {
+    fn discriminate_sorted<V: 'a, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, u8, V>
+        where I: IntoIterator,
+              I::Item: Into<(u8, V)>,
+              I::IntoIter: DoubleEndedIterator + 'a
+    {
+        let mut pairs = pairs.into_iter();
+
+        if pairs.size_hint().1.map(|n| n <= 1) == Some(true) {
+            return DiscriminateSorted(DiscriminateSortedImpl::One(pairs.next()
+                                                                       .map(|kv| kv.into().1)));
+        }
+
+        let byte_desc = Natural::new(::std::u8::MAX as usize);
+        DiscriminateSorted(DiscriminateSortedImpl::Natural(unsafe {
+            byte_desc.bdisc_unchecked(
+                Vec::push,
+                pairs.map(|kv| {
+            let (k, v) = kv.into();
+            (k as usize, v)
+        })) }.into_iter()))
+    }
+}
+
+#[derive(Debug,Copy,Clone,Default)]
+#[cfg(any(target_pointer_width = "16",
+          target_pointer_width = "32",
+          target_pointer_width = "64",
+          target_pointer_width = "128"))]
+pub struct Short;
+
+#[cfg(any(target_pointer_width = "16",
+          target_pointer_width = "32",
+          target_pointer_width = "64",
+          target_pointer_width = "128"))]
+impl<'a> Discriminator<'a, u16> for Short {
+    fn discriminate_sorted<V: 'a, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, u16, V>
+        where I: IntoIterator,
+              I::Item: Into<(u16, V)>,
+              I::IntoIter: DoubleEndedIterator + 'a
+    {
+        let mut pairs = pairs.into_iter();
+
+        if pairs.size_hint().1.map(|n| n <= 1) == Some(true) {
+            return DiscriminateSorted(DiscriminateSortedImpl::One(pairs.next()
+                                                                       .map(|kv| kv.into().1)));
+        }
+
+        let byte_desc = Natural::new(::std::u16::MAX as usize);
+        DiscriminateSorted(DiscriminateSortedImpl::Natural(unsafe {
+            byte_desc.bdisc_unchecked(
+                Vec::push,
+                pairs.map(|kv| {
+            let (k, v) = kv.into();
+            (k as usize, v)
+        })) }.into_iter()))
     }
 }
 

@@ -1,4 +1,5 @@
 use std::vec;
+use either::Either::{self, Left, Right};
 
 pub trait Discriminator<'a, K: 'a> {
     // fn discriminate<V, I>(&'a self, pairs: I)
@@ -357,9 +358,9 @@ impl<'a> Discriminator<'a, usize> for Natural {
         }
 
         let res = if self.is_unchecked {
-            self.bdisc(Vec::push, pairs)
-        } else {
             unsafe { self.bdisc_unchecked(Vec::push, pairs) }
+        } else {
+            self.bdisc(Vec::push, pairs)
         };
         DiscriminateSorted(DiscriminateSortedImpl::Natural(res.into_iter()))
     }
@@ -523,3 +524,6 @@ impl<'a, K: 'a, J: 'a, F, D: ?Sized> Discriminator<'a, K> for Map<F, D>
             }))))
     }
 }
+
+#[derive(Debug,Copy,Clone,Default)]
+pub struct Sum<L, R: ?Sized>(L, R);

@@ -16,13 +16,17 @@ pub trait Discriminator<'a, K: 'a> {
               I::Item: Into<(K, V)>,
               I::IntoIter: DoubleEndedIterator + 'a;
 
+    fn by_ref(&'a self) -> &'a Self {
+        self
+    }
+
     fn invert(self) -> Invert<Self>
         where Self: Sized
     {
         Invert::new(self)
     }
 
-    fn map<J: 'a, F>(self, f: F) -> Map<F, Self>
+    fn map_key<J: 'a, F>(self, f: F) -> Map<F, Self>
         where Self: Sized,
               F: Fn(J) -> K
     {
@@ -250,6 +254,7 @@ impl<'a, K: 'a> Discriminator<'a, K> for Trivial {
 #[derive(Debug,Copy,Clone)]
 pub struct Natural {
     limit: usize,
+    is_unchecked: bool,
 }
 
 impl From<usize> for Natural {
@@ -282,7 +287,17 @@ impl Natural {
     {
         let limit = limit.into();
         debug_assert!(limit >= 2);
-        Natural { limit: limit }
+        Natural { limit: limit,
+                  is_unchecked: false, }
+    }
+
+    pub unsafe fn new_unchecked<N>(limit: N) -> Natural
+        where N: Into<usize>
+    {
+        let limit = limit.into();
+        debug_assert!(limit >= 2);
+        Natural { limit: limit,
+                  is_unchecked: true, }
     }
 
     fn bdisc<V, F, I>(&self, mut update: F, pairs: I) -> Vec<Vec<V>>
@@ -341,80 +356,70 @@ impl<'a> Discriminator<'a, usize> for Natural {
                                                                        .map(|kv| kv.into().1)));
         }
 
-        DiscriminateSorted(DiscriminateSortedImpl::Natural(self.bdisc(Vec::push, pairs)
-                                                               .into_iter()))
+        let res = if self.is_unchecked {
+            self.bdisc(Vec::push, pairs)
+        } else {
+            unsafe { self.bdisc_unchecked(Vec::push, pairs) }
+        };
+        DiscriminateSorted(DiscriminateSortedImpl::Natural(res.into_iter()))
     }
 }
 
 #[derive(Debug,Copy,Clone,Default)]
-#[cfg(any(target_pointer_width = "8",
-          target_pointer_width = "16",
-          target_pointer_width = "32",
-          target_pointer_width = "64",
-          target_pointer_width = "128"))]
-pub struct Byte;
+pub struct U8;
 
-#[cfg(any(target_pointer_width = "8",
-          target_pointer_width = "16",
-          target_pointer_width = "32",
-          target_pointer_width = "64",
-          target_pointer_width = "128"))]
-impl<'a> Discriminator<'a, u8> for Byte {
+impl U8 {
+    pub fn new() -> Self {
+        U8
+    }
+}
+
+impl<'a> Discriminator<'a, u8> for U8 {
     fn discriminate_sorted<V: 'a, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, u8, V>
         where I: IntoIterator,
               I::Item: Into<(u8, V)>,
               I::IntoIter: DoubleEndedIterator + 'a
     {
-        let mut pairs = pairs.into_iter();
-
-        if pairs.size_hint().1.map(|n| n <= 1) == Some(true) {
-            return DiscriminateSorted(DiscriminateSortedImpl::One(pairs.next()
-                                                                       .map(|kv| kv.into().1)));
+        // when `const fn` support goes stable, this will be nicer
+        fn conv(k: u8) -> usize {
+            k as usize
         }
-
-        let byte_desc = Natural::new(::std::u8::MAX as usize);
-        DiscriminateSorted(DiscriminateSortedImpl::Natural(unsafe {
-            byte_desc.bdisc_unchecked(
-                Vec::push,
-                pairs.map(|kv| {
-            let (k, v) = kv.into();
-            (k as usize, v)
-        })) }.into_iter()))
+        const DESC: &'static Map<fn(u8) -> usize, Natural> =
+            &Map(conv,
+                 Natural { limit: ::std::u8::MAX as usize,
+                           is_unchecked: true, });
+        DESC.discriminate_sorted(pairs)
     }
 }
 
 #[derive(Debug,Copy,Clone,Default)]
-#[cfg(any(target_pointer_width = "16",
-          target_pointer_width = "32",
-          target_pointer_width = "64",
-          target_pointer_width = "128"))]
-pub struct Short;
+pub struct U16;
 
-#[cfg(any(target_pointer_width = "16",
-          target_pointer_width = "32",
-          target_pointer_width = "64",
-          target_pointer_width = "128"))]
-impl<'a> Discriminator<'a, u16> for Short {
+impl U16 {
+    pub fn new() -> Self {
+        U16
+    }
+}
+
+impl<'a> Discriminator<'a, u16> for U16 {
     fn discriminate_sorted<V: 'a, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, u16, V>
         where I: IntoIterator,
               I::Item: Into<(u16, V)>,
               I::IntoIter: DoubleEndedIterator + 'a
     {
-        let mut pairs = pairs.into_iter();
-
-        if pairs.size_hint().1.map(|n| n <= 1) == Some(true) {
-            return DiscriminateSorted(DiscriminateSortedImpl::One(pairs.next()
-                                                                       .map(|kv| kv.into().1)));
+        if cfg!(target_pointer_width = "8") {
+            unimplemented!(); // TODO: `Either`-based solution using `U8`
+        } else {
+            // when `const fn` support goes stable, this will be nicer
+            fn conv(k: u16) -> usize {
+                k as usize
+            }
+            const DESC: &'static Map<fn(u16) -> usize, Natural> =
+                &Map(conv,
+                     Natural { limit: ::std::u16::MAX as usize,
+                               is_unchecked: true, });
+            DESC.discriminate_sorted(pairs)
         }
-
-        let byte_desc = Natural::new(::std::u16::MAX as usize);
-        DiscriminateSorted(DiscriminateSortedImpl::Natural(unsafe {
-            byte_desc.bdisc_unchecked(
-                Vec::push,
-                pairs.map(|kv| {
-            let (k, v) = kv.into();
-            (k as usize, v)
-        })) }.into_iter()))
     }
 }
 
@@ -509,11 +514,10 @@ impl<'a, K: 'a, J: 'a, F, D: ?Sized> Discriminator<'a, K> for Map<F, D>
                                                                        .map(|kv| kv.into().1)));
         }
 
-        let Map(ref f, ref inner) = *self;
         DiscriminateSorted(DiscriminateSortedImpl::Opaque(Box::new(
-            inner.discriminate_sorted(pairs.map(move |kv| {
+            self.1.discriminate_sorted(pairs.map(move |kv| {
                 let (k, v) = kv.into();
-                (f(k), v)
+                ((self.0)(k), v)
             })).map(|group| {
                 DiscriminateSortedGroup(DiscriminateSortedGroupImpl::Opaque(Box::new(group)))
             }))))

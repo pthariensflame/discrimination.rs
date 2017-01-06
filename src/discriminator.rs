@@ -64,6 +64,33 @@ pub trait Discriminator<'a, K: 'a> {
     }
 }
 
+impl<'a, K: 'a, D: ?Sized> Discriminator<'a, K> for &'a D where D: Discriminator<'a, K> {
+    fn discriminate_sorted<V: 'a, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, K, V>
+        where I: IntoIterator,
+              I::Item: Into<(K, V)>,
+              I::IntoIter: DoubleEndedIterator + 'a {
+        D::discriminate_sorted(&**self, pairs)
+    }
+}
+
+impl<'a, K: 'a, D: ?Sized> Discriminator<'a, K> for &'a mut D where D: Discriminator<'a, K> {
+    fn discriminate_sorted<V: 'a, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, K, V>
+        where I: IntoIterator,
+              I::Item: Into<(K, V)>,
+              I::IntoIter: DoubleEndedIterator + 'a {
+        D::discriminate_sorted(&**self, pairs)
+    }
+}
+
+impl<'a, K: 'a, D: ?Sized> Discriminator<'a, K> for Box<D> where D: Discriminator<'a, K> {
+    fn discriminate_sorted<V: 'a, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, K, V>
+        where I: IntoIterator,
+              I::Item: Into<(K, V)>,
+              I::IntoIter: DoubleEndedIterator + 'a {
+        D::discriminate_sorted(&**self, pairs)
+    }
+}
+
 pub struct DiscriminateSorted<'a, K: 'a, V: 'a>(DiscriminateSortedImpl<'a, K, V>);
 
 enum DiscriminateSortedImpl<'a, K: 'a, V: 'a> {

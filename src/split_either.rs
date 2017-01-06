@@ -116,7 +116,7 @@ impl<A, B, I: ?Sized, S: ?Sized> Iterator for SplitEitherLeft<A, B, I, S>
     fn size_hint(&self) -> (usize, Option<usize>) {
         <S as Sharing<SplitEitherImpl<A, B, I>>>::inspect(&self.0, |this| {
             let mut low = 0usize;
-            let (_, mut high_opt) = this.inner.size_hint();
+            let mut high_opt = this.inner.size_hint().1;
             let front_extra = this.left.len();
             let back_extra = this.left.len();
             low = low.saturating_add(front_extra);
@@ -172,7 +172,7 @@ impl<A, B, I: ?Sized, S: ?Sized> Iterator for SplitEitherRight<A, B, I, S>
     fn size_hint(&self) -> (usize, Option<usize>) {
         <S as Sharing<SplitEitherImpl<A, B, I>>>::inspect(&self.0, |this| {
             let mut low = 0usize;
-            let (_, mut high_opt) = this.inner.size_hint();
+            let mut high_opt = this.inner.size_hint().1;
             let front_extra = this.right.len();
             let back_extra = this.right.len();
             low = low.saturating_add(front_extra);

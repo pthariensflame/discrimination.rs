@@ -1,5 +1,6 @@
-use std::vec;
 use either::Either::{self, Left, Right};
+use split_either::{SplitEitherLeft, SplitEitherRight, split_either};
+use std::vec;
 
 pub trait Discriminator<'a, K: 'a> {
     // fn discriminate<V, I>(&'a self, pairs: I)
@@ -32,6 +33,34 @@ pub trait Discriminator<'a, K: 'a> {
               F: Fn(J) -> K
     {
         Map::new(f, self)
+    }
+
+    fn sum_left<J: 'a, D>(self, other: D) -> Sum<Self, D>
+        where Self: Sized,
+              D: Discriminator<'a, J>
+    {
+        Sum::left_biased(self, other)
+    }
+
+    fn sum_right<J: 'a, D>(self, other: D) -> Sum<Self, D>
+        where Self: Sized,
+              D: Discriminator<'a, J>
+    {
+        Sum::right_biased(self, other)
+    }
+
+    fn product_left<J: 'a, D>(self, other: D) -> Product<Self, D>
+        where Self: Sized,
+              D: Discriminator<'a, J>
+    {
+        Product::left_biased(self, other)
+    }
+
+    fn product_right<J: 'a, D>(self, other: D) -> Product<Self, D>
+        where Self: Sized,
+              D: Discriminator<'a, J>
+    {
+        Product::right_biased(self, other)
     }
 }
 
@@ -242,7 +271,7 @@ impl<'a, K: 'a> Discriminator<'a, K> for Trivial {
     {
         let mut pairs = pairs.into_iter();
 
-        if pairs.size_hint().1.map(|n| n <= 1) == Some(true) {
+        if pairs.size_hint().1.map_or(false, |n| n <= 1) {
             return DiscriminateSorted(DiscriminateSortedImpl::One(pairs.next()
                                                                        .map(|kv| kv.into().1)));
         }
@@ -301,6 +330,10 @@ impl Natural {
                   is_unchecked: true, }
     }
 
+    pub fn limit(&self) -> usize {
+        self.limit
+    }
+
     fn bdisc<V, F, I>(&self, mut update: F, pairs: I) -> Vec<Vec<V>>
         where F: FnMut(&mut Vec<V>, V),
               I: DoubleEndedIterator,
@@ -352,7 +385,7 @@ impl<'a> Discriminator<'a, usize> for Natural {
     {
         let mut pairs = pairs.into_iter();
 
-        if pairs.size_hint().1.map(|n| n <= 1) == Some(true) {
+        if pairs.size_hint().1.map_or(false, |n| n <= 1) {
             return DiscriminateSorted(DiscriminateSortedImpl::One(pairs.next()
                                                                        .map(|kv| kv.into().1)));
         }
@@ -409,7 +442,7 @@ impl<'a> Discriminator<'a, u16> for U16 {
               I::IntoIter: DoubleEndedIterator + 'a
     {
         if cfg!(target_pointer_width = "8") {
-            unimplemented!(); // TODO: `Either`-based solution using `U8`
+            unimplemented!(); // TODO: `Product`-based solution using `U8`
         } else {
             // when `const fn` support goes stable, this will be nicer
             fn conv(k: u16) -> usize {
@@ -425,7 +458,7 @@ impl<'a> Discriminator<'a, u16> for U16 {
 }
 
 #[derive(Debug,Copy,Clone,Default)]
-pub struct Invert<D: ?Sized>(D);
+pub struct Invert<D: ?Sized>(pub D);
 
 impl<D> Invert<D> {
     pub fn new<I>(inner: I) -> Invert<D>
@@ -463,7 +496,7 @@ impl<'a, K: 'a, D: ?Sized> Discriminator<'a, K> for Invert<D>
     {
         let mut pairs = pairs.into_iter();
 
-        if pairs.size_hint().1.map(|n| n <= 1) == Some(true) {
+        if pairs.size_hint().1.map_or(false, |n| n <= 1) {
             return DiscriminateSorted(DiscriminateSortedImpl::One(pairs.next_back()
                                                                        .map(|kv| kv.into().1)));
         }
@@ -476,7 +509,7 @@ impl<'a, K: 'a, D: ?Sized> Discriminator<'a, K> for Invert<D>
 
 
 #[derive(Debug,Copy,Clone,Default)]
-pub struct Map<F, D: ?Sized>(F, D);
+pub struct Map<F, D: ?Sized>(pub F, pub D);
 
 impl<F, D> Map<F, D> {
     pub fn new<I, G>(f: G, inner: I) -> Map<F, D>
@@ -510,7 +543,7 @@ impl<'a, K: 'a, J: 'a, F, D: ?Sized> Discriminator<'a, K> for Map<F, D>
     {
         let mut pairs = pairs.into_iter();
 
-        if pairs.size_hint().1.map(|n| n <= 1) == Some(true) {
+        if pairs.size_hint().1.map_or(false, |n| n <= 1) {
             return DiscriminateSorted(DiscriminateSortedImpl::One(pairs.next_back()
                                                                        .map(|kv| kv.into().1)));
         }
@@ -526,4 +559,140 @@ impl<'a, K: 'a, J: 'a, F, D: ?Sized> Discriminator<'a, K> for Map<F, D>
 }
 
 #[derive(Debug,Copy,Clone,Default)]
-pub struct Sum<L, R: ?Sized>(L, R);
+pub struct Sum<L, R: ?Sized> {
+    pub is_right_biased: bool,
+    pub left: L,
+    pub right: R,
+}
+
+impl<L, R> Sum<L, R> {
+    pub fn left_biased<A, B>(l: A, r: B) -> Sum<L, R>
+        where A: Into<L>,
+              B: Into<R>
+    {
+        Sum { is_right_biased: false,
+              left: l.into(),
+              right: r.into(), }
+    }
+
+    pub fn right_biased<A, B>(l: A, r: B) -> Sum<L, R>
+        where A: Into<L>,
+              B: Into<R>
+    {
+        Sum { is_right_biased: true,
+              left: l.into(),
+              right: r.into(), }
+    }
+}
+
+impl<'a, J: 'a, K: 'a, L, R: ?Sized> Discriminator<'a, Either<J, K>> for Sum<L, R>
+    where L: Discriminator<'a, J>,
+          R: Discriminator<'a, K>
+{
+    fn discriminate_sorted<V: 'a, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, Either<J, K>, V>
+        where I: IntoIterator,
+              I::Item: Into<(Either<J, K>, V)>,
+              I::IntoIter: DoubleEndedIterator + 'a
+    {
+        let mut pairs = pairs.into_iter();
+
+        if pairs.size_hint().1.map_or(false, |n| n <= 1) {
+            return DiscriminateSorted(DiscriminateSortedImpl::One(pairs.next_back()
+                                                                       .map(|kv| kv.into().1)));
+        }
+
+        let (left_pairs, right_pairs): (SplitEitherLeft<(J, V), (K, V), _>,
+                                        SplitEitherRight<(J, V), (K, V), _>) =
+            split_either(pairs.map(|kv| {
+                let (k, v) = kv.into();
+                match k {
+                    Left(kl) => Left((kl, v)),
+                    Right(kr) => Right((kr, v)),
+                }
+            }));
+        if self.is_right_biased {
+            DiscriminateSorted(DiscriminateSortedImpl::Opaque(Box::new(
+            self.right.discriminate_sorted(right_pairs).map(|group| {
+                DiscriminateSortedGroup(DiscriminateSortedGroupImpl::Opaque(Box::new(group)))
+            }).chain(self.left.discriminate_sorted(left_pairs).map(|group| {
+                DiscriminateSortedGroup(DiscriminateSortedGroupImpl::Opaque(Box::new(group)))
+            })))))
+        } else {
+            DiscriminateSorted(DiscriminateSortedImpl::Opaque(Box::new(
+            self.left.discriminate_sorted(left_pairs).map(|group| {
+                DiscriminateSortedGroup(DiscriminateSortedGroupImpl::Opaque(Box::new(group)))
+            }).chain(self.right.discriminate_sorted(right_pairs).map(|group| {
+                DiscriminateSortedGroup(DiscriminateSortedGroupImpl::Opaque(Box::new(group)))
+            })))))
+        }
+    }
+}
+
+#[derive(Debug,Copy,Clone,Default)]
+pub struct Product<L, R: ?Sized> {
+    pub is_right_biased: bool,
+    pub left: L,
+    pub right: R,
+}
+
+impl<L, R> Product<L, R> {
+    pub fn left_biased<A, B>(l: A, r: B) -> Product<L, R>
+        where A: Into<L>,
+              B: Into<R>
+    {
+        Product { is_right_biased: false,
+                  left: l.into(),
+                  right: r.into(), }
+    }
+
+    pub fn right_biased<A, B>(l: A, r: B) -> Product<L, R>
+        where A: Into<L>,
+              B: Into<R>
+    {
+        Product { is_right_biased: true,
+                  left: l.into(),
+                  right: r.into(), }
+    }
+}
+
+impl<'a, J: 'a, K: 'a, L, R: ?Sized> Discriminator<'a, (J, K)> for Product<L, R>
+    where L: Discriminator<'a, J>,
+          R: Discriminator<'a, K>
+{
+    fn discriminate_sorted<V: 'a, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, (J, K), V>
+        where I: IntoIterator,
+              I::Item: Into<((J, K), V)>,
+              I::IntoIter: DoubleEndedIterator + 'a
+    {
+        let mut pairs = pairs.into_iter();
+
+        if pairs.size_hint().1.map_or(false, |n| n <= 1) {
+            return DiscriminateSorted(DiscriminateSortedImpl::One(pairs.next_back()
+                                                                       .map(|kv| kv.into().1)));
+        }
+
+        if self.is_right_biased {
+            DiscriminateSorted(DiscriminateSortedImpl::Opaque(Box::new(
+            self.right.discriminate_sorted(pairs.map(|kv| {
+                let ((kl, kr), v) = kv.into();
+                (kr, (kl, v))
+            })).map(|group| -> DiscriminateSortedGroup<'a, (J, K), (J, V)> {
+                DiscriminateSortedGroup(DiscriminateSortedGroupImpl::Opaque(Box::new(group)))
+            }).flat_map(move |pairs_stripped| {
+                        self.left.discriminate_sorted(pairs_stripped).map(|group| {
+                DiscriminateSortedGroup(DiscriminateSortedGroupImpl::Opaque(Box::new(group)))
+                        }) }))))
+        } else {
+            DiscriminateSorted(DiscriminateSortedImpl::Opaque(Box::new(
+            self.left.discriminate_sorted(pairs.map(|kv| {
+                let ((kl, kr), v) = kv.into();
+                (kl, (kr, v))
+            })).map(|group| -> DiscriminateSortedGroup<'a, (J, K), (K, V)> {
+                DiscriminateSortedGroup(DiscriminateSortedGroupImpl::Opaque(Box::new(group)))
+            }).flat_map(move |pairs_stripped| {
+                        self.right.discriminate_sorted(pairs_stripped).map(|group| {
+                DiscriminateSortedGroup(DiscriminateSortedGroupImpl::Opaque(Box::new(group)))
+                        }) }))))
+        }
+    }
+}

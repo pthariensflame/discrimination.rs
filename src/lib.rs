@@ -13,9 +13,9 @@ pub mod discriminator;
 pub mod split_either;
 
 pub mod prelude {
-    #[doc(inline)]
-    pub use discriminator::Discriminator;
-    #[doc(inline)]
+    #[doc(no_inline)]
+    pub use discriminator::{Discriminator, Natural, Trivial, U16, U8};
+    #[doc(no_inline)]
     pub use either::Either;
 }
 

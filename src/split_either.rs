@@ -59,7 +59,7 @@ impl<T: ?Sized> Sharing<T> for Atomic {
     }
 }
 
-struct SplitEitherImpl<A, B, I: ?Sized> {
+pub struct SplitEitherImpl<A, B, I: ?Sized> {
     left: VecDeque<A>,
     right: VecDeque<B>,
     left_back: VecDeque<A>,

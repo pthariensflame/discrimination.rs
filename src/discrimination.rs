@@ -1,47 +1,36 @@
-use is_pair::{HasSnd, IsPair};
-use std::{iter, vec};
+use std::vec;
 
-pub trait Discriminator<K> {
-    // fn discriminate<'a, V, I>(&'a self, pairs: I)
-    //     -> Discriminate<'a, V, I::IntoIter>
+pub trait Discriminator<'a, K: 'a> {
+    // fn discriminate<V, I>(&'a self, pairs: I)
+    //     -> Discriminate<'a, K, V>
     //     where I: IntoIterator,
-    //           I::Item: IsPair<Fst = K, Snd = V>,
+    //           I::Item: Into<(K, V)>,
     //           I::IntoIter: DoubleEndedIterator + 'a;
-    // fn discriminate_unstable<'a, V, I>(&'a self, pairs: I)
-    //     -> DiscriminateUnstable<'a, V, I::IntoIter>
+    // fn discriminate_unstable<V, I>(&'a self, pairs: I)
+    //     -> DiscriminateUnstable<'a, K, V>
     //     where I: IntoIterator,
-    //           I::Item: IsPair<Fst = K, Snd = V>,
+    //           I::Item: Into<(K, V)>,
     //           I::IntoIter: DoubleEndedIterator + 'a;
-    fn discriminate_sorted<'a, V: 'a, I>(&'a self,
-                                         pairs: I)
-                                         -> DiscriminateSorted<'a, V, I::IntoIter>
+    fn discriminate_sorted<V: 'a, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, K, V>
         where I: IntoIterator,
-              I::Item: IsPair<Fst = K, Snd = V>,
+              I::Item: Into<(K, V)>,
               I::IntoIter: DoubleEndedIterator + 'a;
 }
 
-pub struct DiscriminateSorted<'a, V: 'a, I>(DiscriminateSortedImpl<'a, V, I>)
-    where I: DoubleEndedIterator + 'a,
-          I::Item: HasSnd<Snd = V>;
+pub struct DiscriminateSorted<'a, K: 'a, V: 'a>(DiscriminateSortedImpl<'a, K, V>);
 
-enum DiscriminateSortedImpl<'a, V: 'a, I>
-    where I: DoubleEndedIterator + 'a,
-          I::Item: HasSnd<Snd = V>
-{
+enum DiscriminateSortedImpl<'a, K: 'a, V: 'a> {
     One(Option<V>),
-    Trivial(Option<I>),
+    Trivial(Option<Box<DoubleEndedIterator<Item = (K, V)> + 'a>>),
     Natural(vec::IntoIter<Vec<V>>),
-    Invert(Box<DiscriminateSorted<'a, V, I>>),
-    Map(Box<DiscriminateSorted<'a, V, Box<DoubleEndedIterator<Item = ((), V)> + 'a>>>),
+    Invert(Box<DiscriminateSorted<'a, K, V>>),
+    Opaque(Box<DoubleEndedIterator<Item = DiscriminateSortedGroup<'a, K, V>> + 'a>),
 }
 
-impl<'a, V: 'a, I> Iterator for DiscriminateSorted<'a, V, I>
-    where I: DoubleEndedIterator + 'a,
-          I::Item: HasSnd<Snd = V>
-{
-    type Item = DiscriminateSortedGroup<'a, V, I>;
+impl<'a, K, V> Iterator for DiscriminateSorted<'a, K, V> {
+    type Item = DiscriminateSortedGroup<'a, K, V>;
 
-    fn next(&mut self) -> Option<DiscriminateSortedGroup<'a, V, I>> {
+    fn next(&mut self) -> Option<DiscriminateSortedGroup<'a, K, V>> {
         match self.0 {
             DiscriminateSortedImpl::One(ref mut v_opt) => {
                 v_opt.take()
@@ -55,21 +44,20 @@ impl<'a, V: 'a, I> Iterator for DiscriminateSorted<'a, V, I>
             DiscriminateSortedImpl::Natural(ref mut inner) => {
                 loop {
                     match inner.next() {
-                        Some(vs) if !vs.is_empty() => {
-                            return Some(DiscriminateSortedGroup(
+                        Some(vs) => {
+                            if !vs.is_empty() {
+                                return Some(DiscriminateSortedGroup(
                                 DiscriminateSortedGroupImpl::Natural(vs.into_iter())));
+                            } else {
+                                continue;
+                            }
                         }
-                        Some(_) => continue,
                         None => return None,
                     }
                 }
             }
             DiscriminateSortedImpl::Invert(ref mut inner) => inner.next_back(),
-            DiscriminateSortedImpl::Map(ref mut inner) => {
-                inner.next().map(|group| {
-                    DiscriminateSortedGroup(DiscriminateSortedGroupImpl::Map(Box::new(group)))
-                })
-            }
+            DiscriminateSortedImpl::Opaque(ref mut inner) => inner.next(),
         }
     }
 
@@ -85,12 +73,12 @@ impl<'a, V: 'a, I> Iterator for DiscriminateSorted<'a, V, I>
             }
             DiscriminateSortedImpl::Natural(ref inner) => (0, inner.size_hint().1),
             DiscriminateSortedImpl::Invert(ref inner) => inner.size_hint(),
-            DiscriminateSortedImpl::Map(ref inner) => inner.size_hint(),
+            DiscriminateSortedImpl::Opaque(ref inner) => inner.size_hint(),
         }
     }
 
-    fn fold<B, F>(self, init: B, f: F) -> B
-        where F: FnMut(B, DiscriminateSortedGroup<'a, V, I>) -> B
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+        where F: FnMut(B, DiscriminateSortedGroup<'a, K, V>) -> B
     {
         match self.0 {
             DiscriminateSortedImpl::One(v_opt) => {
@@ -119,22 +107,14 @@ impl<'a, V: 'a, I> Iterator for DiscriminateSorted<'a, V, I>
                      })
                      .fold(init, f)
             }
-            DiscriminateSortedImpl::Invert(ref mut inner) => inner.rev().fold(init, f),
-            DiscriminateSortedImpl::Map(ref mut inner) => {
-                inner.map(|group| {
-                         DiscriminateSortedGroup(DiscriminateSortedGroupImpl::Map(Box::new(group)))
-                     })
-                     .fold(init, f)
-            }
+            DiscriminateSortedImpl::Invert(inner) => inner.rev().fold(init, f),
+            DiscriminateSortedImpl::Opaque(inner) => inner.fold(init, f),
         }
     }
 }
 
-impl<'a, V: 'a, I> DoubleEndedIterator for DiscriminateSorted<'a, V, I>
-    where I: DoubleEndedIterator + 'a,
-          I::Item: HasSnd<Snd = V>
-{
-    fn next_back(&mut self) -> Option<DiscriminateSortedGroup<'a, V, I>> {
+impl<'a, K, V> DoubleEndedIterator for DiscriminateSorted<'a, K, V> {
+    fn next_back(&mut self) -> Option<DiscriminateSortedGroup<'a, K, V>> {
         match self.0 {
             DiscriminateSortedImpl::One(ref mut v_opt) => {
                 v_opt.take()
@@ -148,51 +128,42 @@ impl<'a, V: 'a, I> DoubleEndedIterator for DiscriminateSorted<'a, V, I>
             DiscriminateSortedImpl::Natural(ref mut inner) => {
                 loop {
                     match inner.next_back() {
-                        Some(vs) if !vs.is_empty() => {
-                            return Some(DiscriminateSortedGroup(
+                        Some(vs) => {
+                            if !vs.is_empty() {
+                                return Some(DiscriminateSortedGroup(
                                 DiscriminateSortedGroupImpl::Natural(vs.into_iter())));
+                            } else {
+                                continue;
+                            }
                         }
-                        Some(_) => continue,
                         None => return None,
                     }
                 }
             }
             DiscriminateSortedImpl::Invert(ref mut inner) => inner.next(),
-            DiscriminateSortedImpl::Map(ref mut inner) => {
-                inner.next_back().map(|group| {
-                    DiscriminateSortedGroup(DiscriminateSortedGroupImpl::Map(Box::new(group)))
-                })
-            }
+            DiscriminateSortedImpl::Opaque(ref mut inner) => inner.next_back(),
         }
     }
 }
 
-pub struct DiscriminateSortedGroup<'a, V: 'a, I>(DiscriminateSortedGroupImpl<'a, V, I>)
-    where I: DoubleEndedIterator + 'a,
-          I::Item: HasSnd<Snd = V>;
+pub struct DiscriminateSortedGroup<'a, K: 'a, V: 'a>(DiscriminateSortedGroupImpl<'a, K, V>);
 
-enum DiscriminateSortedGroupImpl<'a, V: 'a, I>
-    where I: DoubleEndedIterator + 'a,
-          I::Item: HasSnd<Snd = V>
-{
+enum DiscriminateSortedGroupImpl<'a, K: 'a, V: 'a> {
     One(Option<V>),
-    Trivial(I),
+    Trivial(Box<DoubleEndedIterator<Item = (K, V)> + 'a>),
     Natural(vec::IntoIter<V>),
-    Map(Box<DiscriminateSortedGroup<'a, V, Box<DoubleEndedIterator<Item = ((), V)> + 'a>>>),
+    Opaque(Box<DoubleEndedIterator<Item = V> + 'a>),
 }
 
-impl<'a, V, I> Iterator for DiscriminateSortedGroup<'a, V, I>
-    where I: DoubleEndedIterator,
-          I::Item: HasSnd<Snd = V> + 'a
-{
+impl<'a, K, V> Iterator for DiscriminateSortedGroup<'a, K, V> {
     type Item = V;
 
     fn next(&mut self) -> Option<V> {
         match self.0 {
             DiscriminateSortedGroupImpl::One(ref mut v_opt) => v_opt.take(),
-            DiscriminateSortedGroupImpl::Trivial(ref mut pairs) => pairs.next().map(|kv| kv.snd()),
+            DiscriminateSortedGroupImpl::Trivial(ref mut pairs) => pairs.next().map(|kv| kv.1),
             DiscriminateSortedGroupImpl::Natural(ref mut inner) => inner.next(),
-            DiscriminateSortedGroupImpl::Map(ref mut inner) => inner.next(),
+            DiscriminateSortedGroupImpl::Opaque(ref mut inner) => inner.next(),
         }
     }
 
@@ -204,11 +175,11 @@ impl<'a, V, I> Iterator for DiscriminateSortedGroup<'a, V, I>
             }
             DiscriminateSortedGroupImpl::Trivial(ref pairs) => pairs.size_hint(),
             DiscriminateSortedGroupImpl::Natural(ref inner) => inner.size_hint(),
-            DiscriminateSortedGroupImpl::Map(ref inner) => inner.size_hint(),
+            DiscriminateSortedGroupImpl::Opaque(ref inner) => inner.size_hint(),
         }
     }
 
-    fn fold<B, F>(self, init: B, f: F) -> B
+    fn fold<B, F>(self, init: B, mut f: F) -> B
         where F: FnMut(B, V) -> B
     {
         match self.0 {
@@ -218,25 +189,20 @@ impl<'a, V, I> Iterator for DiscriminateSortedGroup<'a, V, I>
                     Some(v) => f(init, v),
                 }
             }
-            DiscriminateSortedGroupImpl::Trivial(pairs) => pairs.map(|kv| kv.snd()).fold(init, f),
+            DiscriminateSortedGroupImpl::Trivial(pairs) => pairs.map(|kv| kv.1).fold(init, f),
             DiscriminateSortedGroupImpl::Natural(inner) => inner.fold(init, f),
-            DiscriminateSortedGroupImpl::Map(inner) => inner.fold(init, f),
+            DiscriminateSortedGroupImpl::Opaque(inner) => inner.fold(init, f),
         }
     }
 }
 
-impl<'a, V, I> DoubleEndedIterator for DiscriminateSortedGroup<'a, V, I>
-    where I: DoubleEndedIterator,
-          I::Item: HasSnd<Snd = V> + 'a
-{
+impl<'a, K, V> DoubleEndedIterator for DiscriminateSortedGroup<'a, K, V> {
     fn next_back(&mut self) -> Option<V> {
         match self.0 {
             DiscriminateSortedGroupImpl::One(ref mut v_opt) => v_opt.take(),
-            DiscriminateSortedGroupImpl::Trivial(ref mut pairs) => {
-                pairs.next_back().map(|kv| kv.snd())
-            }
+            DiscriminateSortedGroupImpl::Trivial(ref mut pairs) => pairs.next_back().map(|kv| kv.1),
             DiscriminateSortedGroupImpl::Natural(ref mut inner) => inner.next_back(),
-            DiscriminateSortedGroupImpl::Map(ref mut inner) => inner.next_back(),
+            DiscriminateSortedGroupImpl::Opaque(ref mut inner) => inner.next_back(),
         }
     }
 }
@@ -250,20 +216,21 @@ impl Trivial {
     }
 }
 
-impl<K> Discriminator<K> for Trivial {
-    fn discriminate_sorted<'a, V, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, V, I::IntoIter>
+impl<'a, K: 'a> Discriminator<'a, K> for Trivial {
+    fn discriminate_sorted<V: 'a, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, K, V>
         where I: IntoIterator,
-              I::Item: IsPair<Fst = K, Snd = V>,
+              I::Item: Into<(K, V)>,
               I::IntoIter: DoubleEndedIterator + 'a
     {
         let mut pairs = pairs.into_iter();
 
         if pairs.size_hint().1.map(|n| n <= 1) == Some(true) {
-            return DiscriminateSorted(DiscriminateSortedImpl::One(
-                pairs.next().map(|kv| kv.into_pair().1)));
+            return DiscriminateSorted(DiscriminateSortedImpl::One(pairs.next()
+                                                                       .map(|kv| kv.into().1)));
         }
 
-        DiscriminateSorted(DiscriminateSortedImpl::Trivial(Some(pairs)))
+        DiscriminateSorted(DiscriminateSortedImpl::Trivial(
+            Some(Box::new(pairs.map(|kv| kv.into())))))
     }
 }
 
@@ -305,20 +272,20 @@ impl Natural {
         Natural { limit: limit }
     }
 
-    fn bdisc<V, F, I>(&self, update: F, pairs: I) -> Vec<Vec<V>>
+    fn bdisc<V, F, I>(&self, mut update: F, pairs: I) -> Vec<Vec<V>>
         where F: FnMut(&mut Vec<V>, V),
               I: DoubleEndedIterator,
-              I::Item: IsPair<Fst = usize, Snd = V>
+              I::Item: Into<(usize, V)>
     {
         // initialize buckets
         let mut buckets = Vec::with_capacity(self.limit);
-        for k in 0..self.limit {
+        for _ in 0..self.limit {
             buckets.push(Vec::new());
         }
 
         // fill buckets
         for kv in pairs {
-            let (k, v) = kv.into_pair();
+            let (k, v) = kv.into();
             update(&mut buckets[k], v);
         }
 
@@ -326,20 +293,20 @@ impl Natural {
         return buckets;
     }
 
-    unsafe fn bdisc_unchecked<V, F, I>(&self, update: F, pairs: I) -> Vec<Vec<V>>
+    unsafe fn bdisc_unchecked<V, F, I>(&self, mut update: F, pairs: I) -> Vec<Vec<V>>
         where F: FnMut(&mut Vec<V>, V),
               I: DoubleEndedIterator,
-              I::Item: IsPair<Fst = usize, Snd = V>
+              I::Item: Into<(usize, V)>
     {
         // initialize buckets
         let mut buckets = Vec::with_capacity(self.limit);
-        for k in 0..self.limit {
+        for _ in 0..self.limit {
             buckets.push(Vec::new());
         }
 
         // fill buckets
         for kv in pairs {
-            let (k, v) = kv.into_pair();
+            let (k, v) = kv.into();
             update(buckets.get_unchecked_mut(k), v);
         }
 
@@ -348,17 +315,17 @@ impl Natural {
     }
 }
 
-impl Discriminator<usize> for Natural {
-    fn discriminate_sorted<'a, V, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, V, I::IntoIter>
+impl<'a> Discriminator<'a, usize> for Natural {
+    fn discriminate_sorted<V: 'a, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, usize, V>
         where I: IntoIterator,
-              I::Item: IsPair<Fst = usize, Snd = V>,
+              I::Item: Into<(usize, V)>,
               I::IntoIter: DoubleEndedIterator + 'a
     {
         let mut pairs = pairs.into_iter();
 
         if pairs.size_hint().1.map(|n| n <= 1) == Some(true) {
-            return DiscriminateSorted(DiscriminateSortedImpl::One(
-                pairs.next().map(|kv| kv.into_pair().1)));
+            return DiscriminateSorted(DiscriminateSortedImpl::One(pairs.next()
+                                                                       .map(|kv| kv.into().1)));
         }
 
         DiscriminateSorted(DiscriminateSortedImpl::Natural(self.bdisc(Vec::push, pairs)
@@ -395,23 +362,23 @@ impl<D: ?Sized> AsMut<D> for Invert<D> {
     }
 }
 
-impl<K, D: ?Sized> Discriminator<K> for Invert<D>
-    where D: Discriminator<K>
+impl<'a, K: 'a, D: ?Sized> Discriminator<'a, K> for Invert<D>
+    where D: Discriminator<'a, K>
 {
-    fn discriminate_sorted<'a, V, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, V, I::IntoIter>
+    fn discriminate_sorted<V: 'a, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, K, V>
         where I: IntoIterator,
-              I::Item: IsPair<Fst = K, Snd = V>,
+              I::Item: Into<(K, V)>,
               I::IntoIter: DoubleEndedIterator + 'a
     {
         let mut pairs = pairs.into_iter();
 
         if pairs.size_hint().1.map(|n| n <= 1) == Some(true) {
-            return DiscriminateSorted(DiscriminateSortedImpl::One(
-                pairs.next_back().map(|kv| kv.into_pair().1)));
+            return DiscriminateSorted(DiscriminateSortedImpl::One(pairs.next_back()
+                                                                       .map(|kv| kv.into().1)));
         }
 
-        DiscriminateSorted(DiscriminateSortedImpl::Invert(
-            Box::new(self.0.discriminate_sorted(pairs))))
+        DiscriminateSorted(DiscriminateSortedImpl::Invert(Box::new(
+            self.0.discriminate_sorted(pairs))))
     }
 }
 
@@ -421,9 +388,9 @@ impl<K, D: ?Sized> Discriminator<K> for Invert<D>
 pub struct Map<F, D: ?Sized>(F, D);
 
 impl<F, D> Map<F, D> {
-    pub fn new<I, G>(inner: I, f: G) -> Map<F, D>
-        where I: Into<D>,
-              G: Into<F>
+    pub fn new<I, G>(f: G, inner: I) -> Map<F, D>
+        where G: Into<F>,
+              I: Into<D>
     {
         Map(f.into(), inner.into())
     }
@@ -441,27 +408,29 @@ impl<F, D: ?Sized> AsMut<D> for Map<F, D> {
     }
 }
 
-impl<K, J, F, D: ?Sized> Discriminator<K> for Map<F, D>
-    where D: Discriminator<J>,
+impl<'a, K: 'a, J: 'a, F, D: ?Sized> Discriminator<'a, K> for Map<F, D>
+    where D: Discriminator<'a, J>,
           F: Fn(K) -> J
 {
-    fn discriminate_sorted<'a, V, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, V, I::IntoIter>
+    fn discriminate_sorted<V: 'a, I>(&'a self, pairs: I) -> DiscriminateSorted<'a, K, V>
         where I: IntoIterator,
-              I::Item: IsPair<Fst = K, Snd = V>,
+              I::Item: Into<(K, V)>,
               I::IntoIter: DoubleEndedIterator + 'a
     {
         let mut pairs = pairs.into_iter();
 
         if pairs.size_hint().1.map(|n| n <= 1) == Some(true) {
-            return DiscriminateSorted(DiscriminateSortedImpl::One(
-                pairs.next_back().map(|kv| kv.into_pair().1)));
+            return DiscriminateSorted(DiscriminateSortedImpl::One(pairs.next_back()
+                                                                       .map(|kv| kv.into().1)));
         }
 
         let Map(ref f, ref inner) = *self;
-        DiscriminateSorted(DiscriminateSortedImpl::Map(
-            Box::new(inner.discriminate_sorted(pairs.map(|kv| {
-                let (k, v) = kv.into_pair();
+        DiscriminateSorted(DiscriminateSortedImpl::Opaque(Box::new(
+            inner.discriminate_sorted(pairs.map(move |kv| {
+                let (k, v) = kv.into();
                 (f(k), v)
-            })))))
+            })).map(|group| {
+                DiscriminateSortedGroup(DiscriminateSortedGroupImpl::Opaque(Box::new(group)))
+            }))))
     }
 }

@@ -2,7 +2,8 @@ use either::Either::{self, Left, Right};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+pub use parking_lot::RwLock;
 
 pub enum NonAtomic {}
 
@@ -49,13 +50,13 @@ impl<T: ?Sized> Sharing<T> for Atomic {
     fn modify<R, F>(this: &Arc<RwLock<T>>, f: F) -> R
         where F: FnOnce(&mut T) -> R
     {
-        f(&mut this.write().expect("Modification under shared RwLock failed"))
+        f(&mut this.write())
     }
 
     fn inspect<R, F>(this: &Arc<RwLock<T>>, f: F) -> R
         where F: FnOnce(&T) -> R
     {
-        f(&this.read().expect("Inspection under shared RwLock failed"))
+        f(&this.read())
     }
 }
 

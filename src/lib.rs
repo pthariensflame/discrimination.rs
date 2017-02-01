@@ -7,6 +7,7 @@
 //! [3]:https://github.com/ekmett/discrimination
 
 pub extern crate either;
+extern crate parking_lot;
 
 pub mod discriminator;
 

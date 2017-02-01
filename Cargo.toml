@@ -1,5 +1,6 @@
 [package]
 authors = ["Alexander Ronald Altman <alexanderaltman@me.com>"]
+categories = ["algorithms"]
 description = "Generic worst-case-linear-time sorting and partitioning algorithms based on discriminators"
 documentation = "https://docs.rs/crate/discrimination"
 keywords = ["discriminators", "sorting", "partitioning", "generic", "algorithms"]
